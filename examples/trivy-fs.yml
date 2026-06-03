@@ -1,0 +1,19 @@
+# Example: Trivy filesystem/dependency (fs) scan using the composite action.
+# Copy into your repo as .github/workflows/trivy-fs.yml.
+name: Trivy Filesystem Scan
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  trivy-fs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Trivy filesystem/deps scan
+        uses: c0x12c/gh-actions-trivy-scan/actions/trivy@v1
+        with:
+          scan_type: fs

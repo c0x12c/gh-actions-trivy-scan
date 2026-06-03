@@ -1,1 +1,17 @@
+# Editors / IDEs
 .idea/
+.vscode/
+*.swp
+
+# Claude Code — keep CLAUDE.md tracked, ignore local settings
+.claude/settings.local.json
+
+# macOS
+.DS_Store
+
+# Trivy scan outputs (generated at runtime)
+trivy-results.sarif
+trivy.txt
+
+# Local docs (specs, notes — not committed)
+docs/

@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.0]
+
+### Added
+
+- `gradle_working_directory` input — generate the lockfile and scan from a subdirectory,
+  for monorepos where the Gradle project isn't at the repo root (e.g. `service`).
+
+### Changed
+
+- **CodeArtifact auth is now opt-in.** `setup_gradle: true` alone sets up JDK + Gradle and
+  generates the lockfile against public Maven (no AWS, no `id-token: write`). CodeArtifact
+  auth + OIDC only run when `gradle_repo_url` is set; the `aws_*` inputs are required only
+  in that case. Previously all of them were mandatory whenever `setup_gradle` was true.
+
+## [1.0.0]
+
 ### Added
 
 - Initial release: `trivy` composite action for running Trivy `config`/`fs`/`repo` scans,

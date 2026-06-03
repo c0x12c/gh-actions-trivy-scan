@@ -1,7 +1,8 @@
-# Example: Trivy fs scan of a Gradle repo, via the reusable workflow.
-# The reusable workflow sets up JDK + Gradle + AWS-OIDC CodeArtifact and
+# Example: Trivy fs scan of a Gradle repo on PRIVATE CodeArtifact, via the
+# reusable workflow. Sets up JDK + Gradle + AWS-OIDC CodeArtifact auth and
 # generates an ephemeral runtimeClasspath lockfile so Trivy can read transitive
-# Gradle dependencies. Copy into your repo as .github/workflows/trivy.yml.
+# Gradle dependencies. For a PUBLIC-Maven repo, see trivy-gradle-public.yml.
+# Copy into your repo as .github/workflows/trivy.yml.
 name: Trivy Scan (Gradle)
 
 on:
@@ -13,11 +14,12 @@ permissions:
 
 jobs:
   trivy:
-    uses: c0x12c/gh-actions-trivy-scan/.github/workflows/trivy.yml@v1.0.0
+    uses: c0x12c/gh-actions-trivy-scan/.github/workflows/trivy.yml@v1.1.0
     with:
       scan_type: fs
       setup_gradle: true
       java_version: "17"
+      # gradle_working_directory: service  # if gradlew lives in a subdirectory
       aws_region: us-west-2
       aws_codeartifact_domain: my-domain
       gradle_repo_url: https://my-domain-<account-id>.d.codeartifact.us-west-2.amazonaws.com/maven/my-repo/

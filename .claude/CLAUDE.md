@@ -15,8 +15,9 @@ workflow via `uses: c0x12c/gh-actions-trivy-scan/.github/workflows/trivy.yml@v1`
 - `actions/trivy/` — Trivy scan action (`config`/`fs`/`repo` scan types). Runs a full
   SARIF scan (uploaded as an artifact) plus a HIGH/CRITICAL severity gate that fails the job.
   Also holds the optional Gradle pre-scan setup (`setup_gradle: true` → JDK + Gradle +
-  AWS-OIDC CodeArtifact + ephemeral `runtimeClasspath` lockfile). **All scan/Gradle logic
-  lives here — this is the single source of truth.**
+  ephemeral `runtimeClasspath` lockfile; **CodeArtifact auth is opt-in**, keyed on
+  `gradle_repo_url` being set). `gradle_working_directory` supports monorepos where
+  `gradlew` is in a subdir. **All scan/Gradle logic lives here — single source of truth.**
 
 **Reusable Workflow:**
 - `.github/workflows/trivy.yml` — `workflow_call` wrapper. Does `checkout`, maps generic

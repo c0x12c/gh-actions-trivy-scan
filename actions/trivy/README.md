@@ -11,14 +11,15 @@ findings are present. A `.trivyignore` file at the scan root is honored if it ex
 |---------------------------|-----------------------------------------------------------------------------------------------|----------|-----------|
 | `scan_type`               | Trivy scan type: `config` (IaC), `fs` (filesystem/deps), or `repo` (git).                     | `true`   |           |
 | `scan_ref`                | Path or git URL to scan.                                                                       | `false`  | `.`       |
-| `setup_gradle`            | Set up JDK + Gradle + AWS-OIDC CodeArtifact and generate an ephemeral `gradle.lockfile` before scanning. See [Gradle support](#gradle-support). | `false`  | `"false"` |
+| `setup_gradle`            | Set up JDK + Gradle and generate an ephemeral `gradle.lockfile` before scanning. See [Gradle support](#gradle-support). | `false`  | `"false"` |
 | `java_version`            | JDK version used when `setup_gradle` is true.                                                  | `false`  | `"17"`    |
-| `gradle_repo_url`         | Maven repo URL written to `gradle.properties`. Required when `setup_gradle` is true.           | `false`  | `""`      |
-| `gradle_repo_username`    | Username written to `gradle.properties` (CodeArtifact convention).                             | `false`  | `"aws"`   |
-| `aws_role_to_assume`      | AWS IAM role ARN to assume via OIDC. Required when `setup_gradle` is true.                     | `false`  | `""`      |
-| `aws_account_id`          | AWS account ID that owns the CodeArtifact domain. Required when `setup_gradle` is true.        | `false`  | `""`      |
-| `aws_region`              | AWS region for the CodeArtifact domain. Required when `setup_gradle` is true.                  | `false`  | `""`      |
-| `aws_codeartifact_domain` | AWS CodeArtifact domain name. Required when `setup_gradle` is true.                            | `false`  | `""`      |
+| `gradle_working_directory`| Directory containing `gradlew` (for monorepos where Gradle lives in a subdir, e.g. `service`). | `false`  | `"."`     |
+| `gradle_repo_url`         | Private CodeArtifact Maven repo URL. **Set this to enable CodeArtifact auth**; leave empty for public Maven. | `false`  | `""`      |
+| `gradle_repo_username`    | Username written to `gradle.properties` (CodeArtifact convention). Only used when `gradle_repo_url` is set. | `false`  | `"aws"`   |
+| `aws_role_to_assume`      | AWS IAM role ARN to assume via OIDC. Required only when `gradle_repo_url` is set.              | `false`  | `""`      |
+| `aws_account_id`          | AWS account ID that owns the CodeArtifact domain. Required only when `gradle_repo_url` is set.  | `false`  | `""`      |
+| `aws_region`              | AWS region for the CodeArtifact domain. Required only when `gradle_repo_url` is set.            | `false`  | `""`      |
+| `aws_codeartifact_domain` | AWS CodeArtifact domain name. Required only when `gradle_repo_url` is set.                      | `false`  | `""`      |
 
 ## Behavior
 
@@ -39,13 +40,18 @@ is required.
 
 Trivy's `fs` scan reads transitive dependencies from a `gradle.lockfile`. Gradle repos
 usually don't commit one, so set `setup_gradle: true` to have the action set up JDK +
-Gradle, authenticate to AWS CodeArtifact via OIDC, and generate an **ephemeral**
-`runtimeClasspath`-only lockfile before scanning. Your `build.gradle.kts` is not modified.
+Gradle and generate an **ephemeral** `runtimeClasspath`-only lockfile before scanning.
+Your `build.gradle.kts` is not modified.
 
-This requires the calling workflow to grant `id-token: write`. Because composite actions
-cannot read the `secrets` context, the AWS values are passed as inputs. For a turn-key
-version that maps secrets for you, use the
-[reusable workflow](../../README.md#reusable-workflow) instead.
+- **Public Maven** (Maven Central, Google Maven, etc.): just `setup_gradle: true`. No AWS
+  inputs, no `id-token: write` needed. Set `gradle_working_directory` if `gradlew` is in a
+  subdirectory (e.g. `service`).
+- **Private CodeArtifact**: also set `gradle_repo_url` (+ `aws_role_to_assume`,
+  `aws_account_id`, `aws_region`, `aws_codeartifact_domain`). This enables OIDC CodeArtifact
+  auth and requires the workflow to grant `id-token: write`. Because composite actions
+  cannot read the `secrets` context, the AWS values are passed as inputs — for a turn-key
+  version that maps secrets for you, use the
+  [reusable workflow](../../README.md#reusable-workflow).
 
 ## Example Usage
 

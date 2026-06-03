@@ -13,7 +13,7 @@ on:
         type: string
         default: "."
       setup_gradle:
-        description: "Set up JDK + Gradle + AWS-OIDC CodeArtifact and generate an ephemeral gradle.lockfile (runtimeClasspath only) before scanning. Required for Gradle repos because Trivy fs needs a lockfile to read transitive deps. Pass the aws_role_to_assume / aws_account_id secrets and have id-token: write at the workflow level."
+        description: "Set up JDK + Gradle and generate an ephemeral gradle.lockfile (runtimeClasspath only) before scanning. Required for Gradle repos because Trivy fs needs a lockfile to read transitive deps. CodeArtifact auth is opt-in: set gradle_repo_url (+ aws_* inputs/secrets) for a private CodeArtifact Maven repo; leave them empty for public Maven."
         required: false
         type: boolean
         default: false
@@ -22,32 +22,37 @@ on:
         required: false
         type: string
         default: "17"
+      gradle_working_directory:
+        description: "Directory containing the Gradle wrapper (gradlew). Use for monorepos where the Gradle project is in a subdirectory."
+        required: false
+        type: string
+        default: "."
       gradle_repo_url:
-        description: "Maven repo URL written to gradle.properties as artifactRegistryMavenReleaseUrl. Required when setup_gradle is true."
+        description: "Private CodeArtifact Maven repo URL. Set to enable CodeArtifact auth; leave empty to resolve from public Maven."
         required: false
         type: string
         default: ""
       gradle_repo_username:
-        description: "Username written to gradle.properties as artifactRegistryMavenUsername (CodeArtifact convention)."
+        description: "Username written to gradle.properties (CodeArtifact convention). Only used when gradle_repo_url is set."
         required: false
         type: string
         default: "aws"
       aws_region:
-        description: "AWS region for the CodeArtifact domain. Required when setup_gradle is true."
+        description: "AWS region for the CodeArtifact domain. Required only when gradle_repo_url is set."
         required: false
         type: string
         default: ""
       aws_codeartifact_domain:
-        description: "AWS CodeArtifact domain name. Required when setup_gradle is true."
+        description: "AWS CodeArtifact domain name. Required only when gradle_repo_url is set."
         required: false
         type: string
         default: ""
     secrets:
       aws_role_to_assume:
-        description: "AWS IAM role ARN to assume via OIDC for CodeArtifact access. Required when setup_gradle is true."
+        description: "AWS IAM role ARN to assume via OIDC for CodeArtifact access. Required only when gradle_repo_url is set."
         required: false
       aws_account_id:
-        description: "AWS account ID that owns the CodeArtifact domain. Required when setup_gradle is true."
+        description: "AWS account ID that owns the CodeArtifact domain. Required only when gradle_repo_url is set."
         required: false
 
 permissions:
@@ -63,12 +68,13 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Run Trivy scan
-        uses: c0x12c/gh-actions-trivy-scan/actions/trivy@v1.0.0
+        uses: c0x12c/gh-actions-trivy-scan/actions/trivy@v1.1.0
         with:
           scan_type: ${{ inputs.scan_type }}
           scan_ref: ${{ inputs.scan_ref }}
           setup_gradle: ${{ inputs.setup_gradle }}
           java_version: ${{ inputs.java_version }}
+          gradle_working_directory: ${{ inputs.gradle_working_directory }}
           gradle_repo_url: ${{ inputs.gradle_repo_url }}
           gradle_repo_username: ${{ inputs.gradle_repo_username }}
           aws_role_to_assume: ${{ secrets.aws_role_to_assume }}

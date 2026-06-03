@@ -10,35 +10,39 @@ inputs:
     required: false
     default: "."
   setup_gradle:
-    description: "Set up JDK + Gradle + AWS-OIDC CodeArtifact and generate an ephemeral gradle.lockfile (runtimeClasspath only) before scanning. Required for Gradle repos because Trivy fs needs a lockfile to read transitive deps. The calling workflow must grant `id-token: write`."
+    description: "Set up JDK + Gradle and generate an ephemeral gradle.lockfile (runtimeClasspath only) before scanning. Required for Gradle repos because Trivy fs needs a lockfile to read transitive deps. CodeArtifact auth is opt-in: set gradle_repo_url (+ the aws_* inputs) for a private CodeArtifact Maven repo; leave them empty for public Maven. The calling workflow must grant `id-token: write` when using CodeArtifact."
     required: false
     default: "false"
   java_version:
     description: "JDK version used when setup_gradle is true."
     required: false
     default: "17"
+  gradle_working_directory:
+    description: "Directory containing the Gradle wrapper (gradlew) when setup_gradle is true. Use this for monorepos where the Gradle project is in a subdirectory (e.g. service)."
+    required: false
+    default: "."
   gradle_repo_url:
-    description: "Maven repo URL written to gradle.properties as artifactRegistryMavenReleaseUrl. Required when setup_gradle is true."
+    description: "Private CodeArtifact Maven repo URL written to gradle.properties as artifactRegistryMavenReleaseUrl. Set this to enable CodeArtifact auth; leave empty to resolve from public Maven."
     required: false
     default: ""
   gradle_repo_username:
-    description: "Username written to gradle.properties as artifactRegistryMavenUsername (CodeArtifact convention)."
+    description: "Username written to gradle.properties as artifactRegistryMavenUsername (CodeArtifact convention). Only used when gradle_repo_url is set."
     required: false
     default: "aws"
   aws_role_to_assume:
-    description: "AWS IAM role ARN to assume via OIDC for CodeArtifact access. Required when setup_gradle is true."
+    description: "AWS IAM role ARN to assume via OIDC for CodeArtifact access. Required only when gradle_repo_url is set."
     required: false
     default: ""
   aws_account_id:
-    description: "AWS account ID that owns the CodeArtifact domain. Required when setup_gradle is true."
+    description: "AWS account ID that owns the CodeArtifact domain. Required only when gradle_repo_url is set."
     required: false
     default: ""
   aws_region:
-    description: "AWS region for the CodeArtifact domain. Required when setup_gradle is true."
+    description: "AWS region for the CodeArtifact domain. Required only when gradle_repo_url is set."
     required: false
     default: ""
   aws_codeartifact_domain:
-    description: "AWS CodeArtifact domain name. Required when setup_gradle is true."
+    description: "AWS CodeArtifact domain name. Required only when gradle_repo_url is set."
     required: false
     default: ""
 
@@ -60,24 +64,22 @@ runs:
     # Locks runtimeClasspath only — what ships to prod — so we don't pull in
     # extra dev/deployment configs that need additional repos. The lockfile is
     # ephemeral; the caller's build.gradle.kts is not modified.
-    - name: Validate Gradle setup inputs
-      if: inputs.setup_gradle == 'true'
+    - name: Validate CodeArtifact inputs
+      if: inputs.setup_gradle == 'true' && inputs.gradle_repo_url != ''
       shell: bash
       env:
         AWS_ROLE_TO_ASSUME: ${{ inputs.aws_role_to_assume }}
         AWS_ACCOUNT_ID: ${{ inputs.aws_account_id }}
         AWS_REGION: ${{ inputs.aws_region }}
         AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.aws_codeartifact_domain }}
-        REPO_URL: ${{ inputs.gradle_repo_url }}
       run: |
         missing=""
         [[ -z "$AWS_ROLE_TO_ASSUME" ]] && missing="$missing aws_role_to_assume"
         [[ -z "$AWS_ACCOUNT_ID" ]] && missing="$missing aws_account_id"
         [[ -z "$AWS_REGION" ]] && missing="$missing aws_region"
         [[ -z "$AWS_CODE_ARTIFACT_DOMAIN" ]] && missing="$missing aws_codeartifact_domain"
-        [[ -z "$REPO_URL" ]] && missing="$missing gradle_repo_url"
         if [[ -n "$missing" ]]; then
-          echo "::error::setup_gradle is true but required input(s) are empty:$missing"
+          echo "::error::gradle_repo_url is set (CodeArtifact mode) but required input(s) are empty:$missing"
           exit 1
         fi
 
@@ -92,8 +94,10 @@ runs:
       if: inputs.setup_gradle == 'true'
       uses: gradle/actions/setup-gradle@v6
 
+    # CodeArtifact auth only runs when gradle_repo_url is set (private Maven).
+    # Public-Maven repos skip these two steps and resolve directly.
     - name: Configure AWS Credentials
-      if: inputs.setup_gradle == 'true'
+      if: inputs.setup_gradle == 'true' && inputs.gradle_repo_url != ''
       uses: aws-actions/configure-aws-credentials@v6
       with:
         role-to-assume: ${{ inputs.aws_role_to_assume }}
@@ -101,8 +105,9 @@ runs:
         aws-region: ${{ inputs.aws_region }}
 
     - name: Config CodeArtifact Auth
-      if: inputs.setup_gradle == 'true'
+      if: inputs.setup_gradle == 'true' && inputs.gradle_repo_url != ''
       shell: bash
+      working-directory: ${{ inputs.gradle_working_directory }}
       env:
         AWS_ACCOUNT_ID: ${{ inputs.aws_account_id }}
         AWS_REGION: ${{ inputs.aws_region }}
@@ -122,6 +127,7 @@ runs:
     - name: Generate Gradle lockfiles
       if: inputs.setup_gradle == 'true'
       shell: bash
+      working-directory: ${{ inputs.gradle_working_directory }}
       run: |
         cat > /tmp/trivy-lock.init.gradle.kts <<'EOF'
         allprojects {

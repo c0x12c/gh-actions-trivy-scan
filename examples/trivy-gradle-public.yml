@@ -1,0 +1,26 @@
+# Example: Trivy fs scan of a Gradle repo on PUBLIC Maven (Maven Central, Google
+# Maven, etc.), using the composite action directly. No AWS / CodeArtifact, so no
+# id-token: write needed. `setup_gradle` generates an ephemeral runtimeClasspath
+# lockfile so Trivy can read transitive Gradle deps. This pattern also fits
+# monorepos: point gradle_working_directory at the Gradle subdir and keep
+# scan_ref at the repo root so JS (pnpm) and Java deps are both scanned.
+# Copy into your repo as .github/workflows/trivy.yml.
+name: Trivy Scan (Gradle, public Maven)
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: c0x12c/gh-actions-trivy-scan/actions/trivy@v1.1.0
+        with:
+          scan_type: fs
+          setup_gradle: true
+          gradle_working_directory: service # omit if gradlew is at the repo root

@@ -27,17 +27,18 @@ caller workflows.
 
 ## Reusable Workflow
 
-For Gradle repos — or any caller that wants checkout, OIDC, and secret mapping handled
-for it — call the reusable workflow instead of the composite action. It checks out the
-repo, optionally sets up JDK + Gradle + AWS-OIDC CodeArtifact and generates an ephemeral
-`runtimeClasspath` lockfile (`setup_gradle: true`), then delegates the scan to the
-composite action.
+For private-CodeArtifact Gradle repos — or any caller that wants checkout, OIDC, and
+secret mapping handled for it — call the reusable workflow instead of the composite
+action. It checks out the repo, optionally sets up JDK + Gradle (with CodeArtifact auth
+when `gradle_repo_url` is set) and generates an ephemeral `runtimeClasspath` lockfile
+(`setup_gradle: true`), then delegates the scan to the composite action.
 
 Consumed via `uses: c0x12c/gh-actions-trivy-scan/.github/workflows/trivy.yml@v1`. See
-[`examples/trivy-gradle.yml`](examples/trivy-gradle.yml) for a complete Gradle example
-(it needs `id-token: write` and the `aws_role_to_assume` / `aws_account_id` secrets). For
-a non-Gradle scan, omit `setup_gradle` and the `aws_*` inputs/secrets; only
-`contents: read` is required.
+[`examples/trivy-gradle.yml`](examples/trivy-gradle.yml) for a CodeArtifact example (needs
+`id-token: write` and the `aws_role_to_assume` / `aws_account_id` secrets). For **public
+Maven**, you don't need the reusable workflow at all — use the composite action directly
+with just `setup_gradle: true` (see
+[`examples/trivy-gradle-public.yml`](examples/trivy-gradle-public.yml)).
 
 ## Version Strategy
 

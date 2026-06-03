@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 - `gradle_working_directory` input — generate the lockfile and scan from a subdirectory,
   for monorepos where the Gradle project isn't at the repo root (e.g. `service`).
+- `skip_files` input — comma-separated paths/globs passed to Trivy `--skip-files`. Use to
+  skip files Trivy can't parse, e.g. git-filter/SOPS-encrypted Terraform secrets
+  (`terraform/**/secrets.tf`), which otherwise log a non-fatal `terraform parser` error.
 
 ### Changed
 

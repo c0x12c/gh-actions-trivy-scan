@@ -9,6 +9,10 @@ inputs:
     description: "Path or git URL to scan. Defaults to repo root."
     required: false
     default: "."
+  skip_files:
+    description: "Comma-separated file paths/globs to skip (passed to Trivy --skip-files). Use for files Trivy can't parse, e.g. git-filter/SOPS-encrypted Terraform secrets (terraform/**/secrets.tf)."
+    required: false
+    default: ""
   setup_gradle:
     description: "Set up JDK + Gradle and generate an ephemeral gradle.lockfile (runtimeClasspath only) before scanning. Required for Gradle repos because Trivy fs needs a lockfile to read transitive deps. CodeArtifact auth is opt-in: set gradle_repo_url (+ the aws_* inputs) for a private CodeArtifact Maven repo; leave them empty for public Maven. The calling workflow must grant `id-token: write` when using CodeArtifact."
     required: false
@@ -167,6 +171,7 @@ runs:
         output: "trivy-results.sarif"
         exit-code: "0"
         skip-dirs: ${{ inputs.scan_type == 'config' && '**/.terraform' || '**/.terraform,**/build,**/.gradle,**/node_modules' }}
+        skip-files: ${{ inputs.skip_files }}
         trivyignores: ".trivyignore"
 
     - name: Upload SARIF as workflow artifact
@@ -186,6 +191,7 @@ runs:
         severity: "CRITICAL,HIGH"
         exit-code: "1"
         skip-dirs: ${{ inputs.scan_type == 'config' && '**/.terraform' || '**/.terraform,**/build,**/.gradle,**/node_modules' }}
+        skip-files: ${{ inputs.skip_files }}
         format: "table"
         output: "trivy.txt"
         trivyignores: ".trivyignore"

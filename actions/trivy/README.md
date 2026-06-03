@@ -11,6 +11,7 @@ findings are present. A `.trivyignore` file at the scan root is honored if it ex
 |---------------------------|-----------------------------------------------------------------------------------------------|----------|-----------|
 | `scan_type`               | Trivy scan type: `config` (IaC), `fs` (filesystem/deps), or `repo` (git).                     | `true`   |           |
 | `scan_ref`                | Path or git URL to scan.                                                                       | `false`  | `.`       |
+| `skip_files`              | Comma-separated paths/globs to skip (Trivy `--skip-files`). For files Trivy can't parse, e.g. encrypted Terraform secrets (`terraform/**/secrets.tf`). | `false`  | `""`      |
 | `setup_gradle`            | Set up JDK + Gradle and generate an ephemeral `gradle.lockfile` before scanning. See [Gradle support](#gradle-support). | `false`  | `"false"` |
 | `java_version`            | JDK version used when `setup_gradle` is true.                                                  | `false`  | `"17"`    |
 | `gradle_working_directory`| Directory containing `gradlew` (for monorepos where Gradle lives in a subdir, e.g. `service`). | `false`  | `"."`     |

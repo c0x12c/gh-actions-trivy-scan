@@ -12,6 +12,11 @@ on:
         required: false
         type: string
         default: "."
+      skip_files:
+        description: "Comma-separated paths/globs to skip (Trivy --skip-files), e.g. encrypted Terraform secrets."
+        required: false
+        type: string
+        default: ""
       setup_gradle:
         description: "Set up JDK + Gradle and generate an ephemeral gradle.lockfile (runtimeClasspath only) before scanning. Required for Gradle repos because Trivy fs needs a lockfile to read transitive deps. CodeArtifact auth is opt-in: set gradle_repo_url (+ aws_* inputs/secrets) for a private CodeArtifact Maven repo; leave them empty for public Maven."
         required: false
@@ -72,6 +77,7 @@ jobs:
         with:
           scan_type: ${{ inputs.scan_type }}
           scan_ref: ${{ inputs.scan_ref }}
+          skip_files: ${{ inputs.skip_files }}
           setup_gradle: ${{ inputs.setup_gradle }}
           java_version: ${{ inputs.java_version }}
           gradle_working_directory: ${{ inputs.gradle_working_directory }}

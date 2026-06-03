@@ -1,0 +1,179 @@
+name: "Generalized Terraform Plan Workflow"
+description: "A reusable action for running Terraform plan in any environment"
+
+inputs:
+  aws_region:
+    description: "AWS region to use"
+    required: true
+  aws_role:
+    description: "The AWS role to assume for the environment"
+    required: true
+  environment:
+    description: "The environment to use (e.g., dev, prod)"
+    required: true
+  github_token:
+    description: "GitHub Token required to post comments to PR"
+    required: true
+  python_version:
+    description: "Python version to use"
+    required: false
+    default: "3.12"
+  secret_filter:
+    description: "The filter name to use with git-secret-protector"
+    required: false
+    default: ""
+  terraform_version:
+    description: "Terraform version to use"
+    required: false
+    default: "1.8.4"
+  working_dir:
+    description: "The working directory for Terraform files"
+    required: true
+  refresh:
+    description: "Whether to refresh the state before planning (true/false)"
+    required: false
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v4
+      with:
+        terraform_version: ${{ inputs.terraform_version }}
+
+    - name: Config Terraform plugin cache
+      shell: bash
+      run: |
+        echo 'plugin_cache_dir="$HOME/.terraform.d/plugin-cache"' >~/.terraformrc
+        mkdir --parents ~/.terraform.d/plugin-cache
+
+    - name: Cache Terraform
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.terraform.d/plugin-cache
+        key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
+        restore-keys: |
+          ${{ runner.os }}-terraform-
+
+    - name: Configure AWS Credentials for ${{ inputs.environment }}
+      uses: aws-actions/configure-aws-credentials@v6
+      with:
+        role-to-assume: ${{ inputs.aws_role }}
+        role-session-name: gh-actions
+        aws-region: ${{ inputs.aws_region }}
+
+    - name: Decrypt Secrets
+      if: ${{ inputs.secret_filter != '' }}
+      uses: c0x12c/gh-actions-git-secret-protector@v1
+      with:
+        filter: ${{ inputs.secret_filter }}
+
+    - name: Terraform Init
+      id: init
+      shell: bash
+      run: terraform init
+      working-directory: ${{ inputs.working_dir }}
+
+    - name: Terraform Validate
+      id: validate
+      shell: bash
+      run: |
+        terraform validate -no-color > /tmp/validate_output.txt
+      working-directory: ${{ inputs.working_dir }}
+
+    - name: Terraform Plan
+      id: plan
+      shell: bash
+      run: |
+        terraform plan -input=false -no-color -lock=false -refresh=${{ inputs.refresh }} -out=/tmp/plan.tmp
+        terraform show -no-color /tmp/plan.tmp > /tmp/plan.out
+        rm -f /tmp/plan.tmp
+      continue-on-error: true
+      working-directory: ${{ inputs.working_dir }}
+
+    - name: Check for Plan Failure
+      if: steps.plan.outputs.exitcode == 1
+      shell: bash
+      run: |
+        echo "::error:: Terraform plan failed"
+        exit 1
+
+    - name: Post Terraform Plan Results to PR
+      uses: actions/github-script@v8
+      if: github.event_name == 'pull_request'
+      with:
+        github-token: ${{ inputs.github_token }}
+        script: |
+          const fs = require('fs')
+
+          const validationOutput = fs.readFileSync('/tmp/validate_output.txt', 'utf8').replace(/`/g, '\\`')
+          fs.unlinkSync('/tmp/validate_output.txt')
+
+          let plan = fs.readFileSync('/tmp/plan.out', 'utf8').replace(/`/g, '\\`')
+          fs.unlinkSync('/tmp/plan.out')
+
+          const environment = '${{ inputs.environment }}'.toUpperCase()
+
+          // GitHub comment body limit is 65536 characters
+          const MAX_COMMENT_LENGTH = 65536
+
+          // Calculate the base template size (without the plan content)
+          const baseHeader = `#### Environment: ${environment}
+          #### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
+          #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+          #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+          <details><summary>Validation Output</summary>
+
+          \`\`\`\n
+          ${validationOutput}
+          \`\`\`
+
+          </details>
+
+          #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+
+          <details><summary>Show Plan</summary>
+
+          \`\`\`\n
+          `;
+
+          const baseFooter = `
+          \`\`\`
+
+          </details>
+
+          *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`, Working Directory: \`${{ inputs.working_dir }}\`, Workflow: \`${{ github.workflow }}\`*`;
+
+          const baseLength = baseHeader.length + baseFooter.length;
+          let output;
+
+          // Check if comment exceeds GitHub's limit and truncate if necessary
+          if (baseLength + plan.length > MAX_COMMENT_LENGTH) {
+            const availableForPlan = MAX_COMMENT_LENGTH - baseLength;
+            const truncationNotice = `\n\n... [Plan truncated - showing first ${availableForPlan} characters only. See workflow logs for full output.] ...`;
+            const maxPlanLength = availableForPlan - truncationNotice.length;
+
+            if (maxPlanLength > 0) {
+              const truncatedPlan = plan.substring(0, maxPlanLength) + truncationNotice;
+              output = `${baseHeader}${truncatedPlan}${baseFooter}`;
+            } else {
+              output = `#### Environment: ${environment}
+
+              #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+
+              Plan output is too large to display. Please check the workflow logs for the full plan.
+
+              *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`, Working Directory: \`${{ inputs.working_dir }}\`, Workflow: \`${{ github.workflow }}\`*`;
+            }
+          } else {
+            output = `${baseHeader}${plan}${baseFooter}`;
+          }
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: output
+          })

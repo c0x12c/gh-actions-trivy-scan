@@ -1,0 +1,23 @@
+name: PR Check
+
+on:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Run Tests
+        run: |
+          node tests/test-comment-length.js
+          node tests/test-backtick-escaping.js
+          node tests/test-refresh-configuration.js

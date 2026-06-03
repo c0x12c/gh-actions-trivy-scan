@@ -1,0 +1,98 @@
+name: "Generalized Terraform Apply Workflow"
+description: "A reusable action for running Terraform plan in any environment"
+
+inputs:
+  aws_region:
+    description: "AWS region to use"
+    required: true
+  aws_role:
+    description: "The AWS role to assume for the environment"
+    required: true
+  environment:
+    description: "The environment to use (e.g., dev, prod)"
+    required: true
+  python_version:
+    description: "Python version to use"
+    required: false
+    default: "3.12"
+  secret_filter:
+    description: "The filter name to use with git-secret-protector"
+    required: false
+    default: ""
+  slack_webhook_url:
+    description: "The Slack Webhook URL for posting deployment notifications"
+    required: false
+    default: ""
+  terraform_version:
+    description: "Terraform version to use"
+    required: false
+    default: "1.8.4"
+  working_dir:
+    description: "The working directory for Terraform files"
+    required: true
+  refresh:
+    description: "Whether to refresh the state before applying (true/false)"
+    required: false
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v4
+      with:
+        terraform_version: ${{ inputs.terraform_version }}
+
+    - name: Config Terraform plugin cache
+      shell: bash
+      run: |
+        echo 'plugin_cache_dir="$HOME/.terraform.d/plugin-cache"' >~/.terraformrc
+        mkdir --parents ~/.terraform.d/plugin-cache
+
+    - name: Cache Terraform
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.terraform.d/plugin-cache
+        key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
+        restore-keys: |
+          ${{ runner.os }}-terraform-
+
+    - name: Configure AWS Credentials for ${{ inputs.environment }}
+      uses: aws-actions/configure-aws-credentials@v6
+      with:
+        role-to-assume: ${{ inputs.aws_role }}
+        role-session-name: gh-actions
+        aws-region: ${{ inputs.aws_region }}
+
+    - name: Decrypt Secrets
+      if: ${{ inputs.secret_filter != '' }}
+      uses: c0x12c/gh-actions-git-secret-protector@v1
+      with:
+        filter: ${{ inputs.secret_filter }}
+
+    - name: Terraform Init
+      id: init
+      shell: bash
+      run: terraform init
+      working-directory: ${{ inputs.working_dir }}
+
+    - name: Terraform Apply
+      id: tf_apply
+      shell: bash
+      run: terraform apply -input=false -auto-approve -refresh=${{ inputs.refresh }}
+      working-directory: ${{ inputs.working_dir }}
+
+    - name: Send Notification to Slack on success
+      uses: c0x12c/gh-actions-slack-notify@v0.1.3
+      if: success() && inputs.slack_webhook_url != ''
+      with:
+        webhook_url: ${{ inputs.slack_webhook_url }}
+        title: '✅ *${{ github.event.repository.name }} - Terraform Apply SUCCESS in ${{ inputs.environment }}*'
+
+    - name: Send Notification to Slack on failure
+      uses: c0x12c/gh-actions-slack-notify@v0.1.3
+      if: failure() && inputs.slack_webhook_url != ''
+      with:
+        webhook_url: ${{ inputs.slack_webhook_url }}
+        title: '❌ *${{ github.event.repository.name }} - Terraform Apply FAILED in ${{ inputs.environment }}*'

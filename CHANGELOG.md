@@ -16,6 +16,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   the `setup_gradle`, `java_version`, `gradle_repo_url`, `gradle_repo_username`,
   `aws_role_to_assume`, `aws_account_id`, `aws_region`, and `aws_codeartifact_domain` inputs.
 - Reusable workflow `.github/workflows/trivy.yml` (`workflow_call`) that handles checkout
-  and secret/input mapping, then delegates the scan to `actions/trivy@v1`.
+  and secret/input mapping, then delegates the scan to `actions/trivy@v1.0.0`.
 - `examples/` directory with ready-to-copy caller workflows (`trivy-config.yml`,
   `trivy-fs.yml`, `trivy-gradle.yml`).

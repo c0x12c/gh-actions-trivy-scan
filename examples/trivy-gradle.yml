@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   trivy:
-    uses: c0x12c/gh-actions-trivy-scan/.github/workflows/trivy.yml@v1
+    uses: c0x12c/gh-actions-trivy-scan/.github/workflows/trivy.yml@v1.0.0
     with:
       scan_type: fs
       setup_gradle: true

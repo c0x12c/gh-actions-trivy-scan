@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Trivy IaC scan
-        uses: c0x12c/gh-actions-trivy-scan/actions/trivy@v1
+        uses: c0x12c/gh-actions-trivy-scan/actions/trivy@v1.0.0
         with:
           scan_type: config
           scan_ref: .

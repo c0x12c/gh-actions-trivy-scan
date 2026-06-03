@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repository provides a reusable composite GitHub Action — and a thin reusable
 workflow wrapper around it — for running Trivy vulnerability and misconfiguration scans.
-The action is consumed via `uses: c0x12c/gh-actions-trivy-scan/actions/trivy@v1`; the
+The action is consumed via `uses: c0x12c/gh-actions-trivy-scan/actions/trivy@v1.0.0`; the
 workflow via `uses: c0x12c/gh-actions-trivy-scan/.github/workflows/trivy.yml@v1`.
 
 ### Core Components
@@ -20,7 +20,7 @@ workflow via `uses: c0x12c/gh-actions-trivy-scan/.github/workflows/trivy.yml@v1`
 
 **Reusable Workflow:**
 - `.github/workflows/trivy.yml` — `workflow_call` wrapper. Does `checkout`, maps generic
-  inputs/secrets, then delegates the scan to `actions/trivy@v1`. It contains no scan logic
+  inputs/secrets, then delegates the scan to `actions/trivy@v1.0.0`. It contains no scan logic
   of its own. Consumed via `uses: c0x12c/gh-actions-trivy-scan/.github/workflows/trivy.yml@v1`.
 
 **Examples:**
@@ -62,7 +62,7 @@ When modifying the action:
 1. Update `actions/trivy/action.yml` (the single source of truth for scan/Gradle logic).
 2. If the change affects the reusable-workflow surface (a new input/secret to pass
    through), update `.github/workflows/trivy.yml` too — but never duplicate scan logic
-   there; it only checks out, maps inputs/secrets, and delegates to `actions/trivy@v1`.
+   there; it only checks out, maps inputs/secrets, and delegates to `actions/trivy@v1.0.0`.
 3. Update or add an `examples/` workflow. Keep usage snippets in `examples/` and
    **reference them** from the READMEs instead of pasting YAML into the docs.
 4. Update `actions/trivy/README.md` and the root `README.md`.
@@ -76,7 +76,7 @@ When modifying the action:
 - Composite-action boolean inputs are **strings**: gate with `if: inputs.x == 'true'`.
 - Keep the action/workflow **vendor-neutral** — no caller-specific secret/var names
   (e.g. no `*_DEV`) or project names baked in. Pass concrete values in.
-- The reusable workflow delegates to `actions/trivy@v1`, so the `v1` tag must exist when
+- The reusable workflow delegates to `actions/trivy@v1.0.0`, so the `v1` tag must exist when
   it runs. A workflow tested on a feature branch runs the *released* action, not the
   branch copy — verify action changes via a direct `uses: ./actions/trivy` job or after
   release.

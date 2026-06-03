@@ -1,0 +1,20 @@
+# Example: Trivy IaC (config) scan using the composite action.
+# Copy into your repo as .github/workflows/trivy-config.yml.
+name: Trivy Config Scan
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  trivy-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Trivy IaC scan
+        uses: c0x12c/gh-actions-trivy-scan/actions/trivy@v1
+        with:
+          scan_type: config
+          scan_ref: .

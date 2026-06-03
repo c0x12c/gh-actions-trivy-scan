@@ -1,0 +1,219 @@
+name: "Trivy Vulnerability Scan"
+description: "Run a Trivy scan (config/IaC, filesystem/deps, or git repo), upload SARIF, and fail the job on HIGH/CRITICAL findings."
+
+inputs:
+  scan_type:
+    description: "Trivy scan type: config (IaC), fs (filesystem/deps), or repo (git repo)."
+    required: true
+  scan_ref:
+    description: "Path or git URL to scan. Defaults to repo root."
+    required: false
+    default: "."
+  setup_gradle:
+    description: "Set up JDK + Gradle + AWS-OIDC CodeArtifact and generate an ephemeral gradle.lockfile (runtimeClasspath only) before scanning. Required for Gradle repos because Trivy fs needs a lockfile to read transitive deps. The calling workflow must grant `id-token: write`."
+    required: false
+    default: "false"
+  java_version:
+    description: "JDK version used when setup_gradle is true."
+    required: false
+    default: "17"
+  gradle_repo_url:
+    description: "Maven repo URL written to gradle.properties as artifactRegistryMavenReleaseUrl. Required when setup_gradle is true."
+    required: false
+    default: ""
+  gradle_repo_username:
+    description: "Username written to gradle.properties as artifactRegistryMavenUsername (CodeArtifact convention)."
+    required: false
+    default: "aws"
+  aws_role_to_assume:
+    description: "AWS IAM role ARN to assume via OIDC for CodeArtifact access. Required when setup_gradle is true."
+    required: false
+    default: ""
+  aws_account_id:
+    description: "AWS account ID that owns the CodeArtifact domain. Required when setup_gradle is true."
+    required: false
+    default: ""
+  aws_region:
+    description: "AWS region for the CodeArtifact domain. Required when setup_gradle is true."
+    required: false
+    default: ""
+  aws_codeartifact_domain:
+    description: "AWS CodeArtifact domain name. Required when setup_gradle is true."
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate scan_type
+      shell: bash
+      run: |
+        case "${{ inputs.scan_type }}" in
+          config|fs|repo) ;;
+          *)
+            echo "::error::Invalid scan_type '${{ inputs.scan_type }}'. Must be one of: config, fs, repo."
+            exit 1
+            ;;
+        esac
+
+    # --- Optional Gradle pre-scan setup (setup_gradle: true) ---
+    # Locks runtimeClasspath only — what ships to prod — so we don't pull in
+    # extra dev/deployment configs that need additional repos. The lockfile is
+    # ephemeral; the caller's build.gradle.kts is not modified.
+    - name: Validate Gradle setup inputs
+      if: inputs.setup_gradle == 'true'
+      shell: bash
+      env:
+        AWS_ROLE_TO_ASSUME: ${{ inputs.aws_role_to_assume }}
+        AWS_ACCOUNT_ID: ${{ inputs.aws_account_id }}
+        AWS_REGION: ${{ inputs.aws_region }}
+        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.aws_codeartifact_domain }}
+        REPO_URL: ${{ inputs.gradle_repo_url }}
+      run: |
+        missing=""
+        [[ -z "$AWS_ROLE_TO_ASSUME" ]] && missing="$missing aws_role_to_assume"
+        [[ -z "$AWS_ACCOUNT_ID" ]] && missing="$missing aws_account_id"
+        [[ -z "$AWS_REGION" ]] && missing="$missing aws_region"
+        [[ -z "$AWS_CODE_ARTIFACT_DOMAIN" ]] && missing="$missing aws_codeartifact_domain"
+        [[ -z "$REPO_URL" ]] && missing="$missing gradle_repo_url"
+        if [[ -n "$missing" ]]; then
+          echo "::error::setup_gradle is true but required input(s) are empty:$missing"
+          exit 1
+        fi
+
+    - name: Set up JDK
+      if: inputs.setup_gradle == 'true'
+      uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: ${{ inputs.java_version }}
+
+    - name: Set up Gradle
+      if: inputs.setup_gradle == 'true'
+      uses: gradle/actions/setup-gradle@v6
+
+    - name: Configure AWS Credentials
+      if: inputs.setup_gradle == 'true'
+      uses: aws-actions/configure-aws-credentials@v6
+      with:
+        role-to-assume: ${{ inputs.aws_role_to_assume }}
+        role-session-name: gh-actions-trivy-${{ github.event.repository.name }}
+        aws-region: ${{ inputs.aws_region }}
+
+    - name: Config CodeArtifact Auth
+      if: inputs.setup_gradle == 'true'
+      shell: bash
+      env:
+        AWS_ACCOUNT_ID: ${{ inputs.aws_account_id }}
+        AWS_REGION: ${{ inputs.aws_region }}
+        AWS_CODE_ARTIFACT_DOMAIN: ${{ inputs.aws_codeartifact_domain }}
+        REPO_URL: ${{ inputs.gradle_repo_url }}
+        REPO_USERNAME: ${{ inputs.gradle_repo_username }}
+      run: |
+        # Lead with a newline so we don't glue onto an existing line that
+        # lacks a trailing \n.
+        {
+          printf '\n'
+          echo "artifactRegistryMavenReleaseUrl=$REPO_URL"
+          echo "artifactRegistryMavenUsername=$REPO_USERNAME"
+          echo "artifactRegistryMavenPassword=$(aws codeartifact get-authorization-token --domain "$AWS_CODE_ARTIFACT_DOMAIN" --domain-owner "$AWS_ACCOUNT_ID" --region "$AWS_REGION" --query authorizationToken --output text)"
+        } >> gradle.properties
+
+    - name: Generate Gradle lockfiles
+      if: inputs.setup_gradle == 'true'
+      shell: bash
+      run: |
+        cat > /tmp/trivy-lock.init.gradle.kts <<'EOF'
+        allprojects {
+          configurations.configureEach {
+            if (name == "runtimeClasspath") {
+              resolutionStrategy.activateDependencyLocking()
+            }
+          }
+          tasks.register("resolveAndLockAll") {
+            notCompatibleWithConfigurationCache("Filters configurations at execution time")
+            doFirst {
+              require(gradle.startParameter.isWriteDependencyLocks) {
+                "\$path must be run with the --write-locks flag"
+              }
+            }
+            doLast {
+              configurations.matching {
+                it.isCanBeResolved && it.name == "runtimeClasspath"
+              }.forEach { it.resolve() }
+            }
+          }
+        }
+        EOF
+        ./gradlew --init-script /tmp/trivy-lock.init.gradle.kts resolveAndLockAll --write-locks
+    # --- End Gradle pre-scan setup ---
+
+    - name: Ensure .trivyignore exists
+      shell: bash
+      run: touch .trivyignore
+
+    - name: Run Trivy scan (full SARIF report)
+      uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+      with:
+        scan-type: ${{ inputs.scan_type }}
+        scan-ref: ${{ inputs.scan_ref }}
+        format: "sarif"
+        output: "trivy-results.sarif"
+        exit-code: "0"
+        skip-dirs: ${{ inputs.scan_type == 'config' && '**/.terraform' || '**/.terraform,**/build,**/.gradle,**/node_modules' }}
+        trivyignores: ".trivyignore"
+
+    - name: Upload SARIF as workflow artifact
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: trivy-sarif-${{ inputs.scan_type }}
+        path: trivy-results.sarif
+        retention-days: 30
+
+    - name: Run Trivy scan (HIGH/CRITICAL severity gate)
+      id: gate
+      uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+      with:
+        scan-type: ${{ inputs.scan_type }}
+        scan-ref: ${{ inputs.scan_ref }}
+        severity: "CRITICAL,HIGH"
+        exit-code: "1"
+        skip-dirs: ${{ inputs.scan_type == 'config' && '**/.terraform' || '**/.terraform,**/build,**/.gradle,**/node_modules' }}
+        format: "table"
+        output: "trivy.txt"
+        trivyignores: ".trivyignore"
+      continue-on-error: true
+
+    - name: Publish Trivy output to job summary
+      if: always()
+      shell: bash
+      run: |
+        if [[ -s trivy.txt ]]; then
+          {
+            echo "### Trivy Scan (HIGH/CRITICAL) — ${{ inputs.scan_type }}"
+            echo "<details><summary>Click to expand</summary>"
+            echo ""
+            echo '```'
+            cat trivy.txt
+            echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "### Trivy Scan (HIGH/CRITICAL) — ${{ inputs.scan_type }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "No HIGH or CRITICAL findings." >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Report HIGH/CRITICAL findings
+      if: steps.gate.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::group::Trivy HIGH/CRITICAL findings"
+        if [[ -s trivy.txt ]]; then
+          cat trivy.txt
+        else
+          echo "(trivy.txt is empty — see SARIF artifact for details)"
+        fi
+        echo "::endgroup::"
+        echo "::error::Trivy found HIGH or CRITICAL findings. See findings above, the job summary, or the trivy-sarif-${{ inputs.scan_type }} artifact."
+        exit 1
